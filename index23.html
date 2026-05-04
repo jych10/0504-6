@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PICO Health: 挑戰移動橋版</title>
+    <style>
+        :root {
+            --pico-bg: #f5f5f5;
+            --pico-dark: #333;
+            --pico-hero: #4ea5ff;
+            --pico-door: #2ecc71;
+            --pico-hp: #ff4757;
+        }
+
+        body {
+            font-family: '微軟正黑體', sans-serif;
+            background-color: var(--pico-bg);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #start-screen, #review-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            text-align: center;
+        }
+
+        #review-screen { display: none; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+
+        .start-btn {
+            background: var(--pico-hero);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 4px 0 #2980b9;
+        }
+
+        #ui-top {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 800px;
+            padding: 10px 20px;
+            font-weight: bold;
+            box-sizing: border-box;
+            font-size: 18px;
+        }
+
+        #question-box {
+            background: var(--pico-dark);
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 18px;
+            width: 90%;
+            max-width: 780px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            margin-bottom: 10px;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        #game-wrapper { position: relative; width: 100%; max-width: 800px; }
+
+        canvas {
+            background-color: white;
+            border: 4px solid var(--pico-dark);
+            border-radius: 8px;
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .review-item {
+            background: #444;
+            margin: 10px 0;
+            padding: 15px;
+            border-left: 5px solid var(--pico-hp);
+            text-align: left;
+            width: 100%;
+            max-width: 600px;
+            border-radius: 4px;
+        }
+
+        #mobile-controls {
+            display: none; width: 100%; justify-content: space-between;
+            padding: 20px; box-sizing: border-box; position: fixed; bottom: 20px; left: 0;
+        }
+
+        .control-btn {
+            width: 70px; height: 70px; background: rgba(0, 0, 0, 0.15);
+            border: 3px solid var(--pico-dark); border-radius: 50%;
+            display: flex; justify-content: center; align-items: center; font-size: 24px;
+            user-select: none;
+        }
+
+        @media (max-width: 850px) { #mobile-controls { display: flex; } }
+    </style>
+</head>
+<body>
+
+<div id="start-screen">
+    <h2>🏥 PICO 健康大冒險</h2>
+    <div style="max-width: 85%; text-align: left; line-height: 1.6; background: #444; padding: 20px; border-radius: 10px;">
+        <p>✅ 左右移動，上鍵跳躍</p>
+        <p>✅ 觸碰金幣回答問題，答對開門</p>
+        <p>⚠️ 10關後橋樑將會移動，小心腳下！</p>
+    </div>
+    <button class="start-btn" onclick="startGame()">開始遊戲</button>
+</div>
+
+<div id="review-screen">
+    <h2 id="review-title">遊戲結束</h2>
+    <div id="final-score" style="font-size: 24px; margin-bottom: 20px; color: #f1c40f;"></div>
+    <div id="review-list" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
+    <button class="start-btn" onclick="location.reload()">再玩一次</button>
+</div>
+
+<div id="ui-top">
+    <div id="status-hp">HP: ❤️❤️❤️</div>
+    <div id="status-score">SCORE: 0</div>
+</div>
+
+<div id="question-box">
+    <div id="q-level" style="font-size: 14px; color: #aaa; margin-bottom: 5px;"></div>
+    <div id="q-text">載入中...</div>
+</div>
+
+<div id="game-wrapper">
+    <canvas id="game-canvas" width="800" height="520"></canvas>
+    <div id="mobile-controls">
+        <div style="display:flex; gap:10px;">
+            <div class="control-btn" id="btn-left">⬅️</div>
+            <div class="control-btn" id="btn-right">➡️</div>
+        </div>
+        <div class="control-btn" id="btn-jump">⬆️</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let quizBank = [
+        { q: "成人每日建議飲水量是體重(kg)乘以多少？", options: ["10ml", "20ml", "30-35ml", "100ml"], correct: 2 },
+        { q: "下列哪種運動最能增進心肺功能？", options: ["看電視", "慢跑", "睡覺", "滑手機"], correct: 1 },
+        { q: "洗手「內外夾弓大立腕」，最後動作是？", options: ["指尖", "手背", "手心", "手腕"], correct: 3 },
+        { q: "預防近視，用眼30分鐘應休息多久？", options: ["1分鐘", "10分鐘", "30分鐘", "不必"], correct: 1 },
+        { q: "正確刷牙法「貝氏刷牙法」，刷毛與牙齒夾角？", options: ["15度", "45度", "90度", "180度"], correct: 1 },
+        { q: "下列哪種食物含有豐富的維生素C？", options: ["白米飯", "芭樂", "炸雞", "可樂"], correct: 1 },
+        { q: "心情不好時，哪種做法比較健康？", options: ["一直吃甜食", "找人傾訴", "悶在心裡", "亂發脾氣"], correct: 1 },
+        { q: "預防骨質疏鬆，應該多補充哪種營養素？", options: ["蛋白質", "鈣質", "脂肪", "糖分"], correct: 1 },
+        { q: "二手菸對身體有害嗎？", options: ["沒影響", "比一手菸毒", "只有味道臭", "會變聰明"], correct: 1 },
+        { q: "正常的睡眠時間，成人建議每天睡幾小時？", options: ["3小時", "7-9小時", "15小時", "不用睡"], correct: 1 },
+        { q: "吃太鹹容易引發哪種疾病？", options: ["高血壓", "近視", "香港腳", "感冒"], correct: 0 },
+        { q: "所謂「天天五蔬果」是指？", options: ["5顆蘋果", "3份蔬菜2份水果", "5杯果汁", "只吃水果"], correct: 1 },
+        { q: "哪種行為最容易傳播流感？", options: ["打噴嚏不遮口鼻", "常洗手", "戴口罩", "均衡飲食"], correct: 0 },
+        { q: "BMI 指數是用來測量什麼？", options: ["智力", "體重是否標準", "視力", "聽力"], correct: 1 },
+        { q: "哪種飲料最健康？", options: ["珍珠奶茶", "純水", "能量飲", "碳酸飲料"], correct: 1 },
+        { q: "預防腸病毒最有效的方法？", options: ["不睡覺", "勤洗手", "多看書", "穿厚衣服"], correct: 1 },
+        { q: "中暑時應該優先做什麼？", options: ["跑步", "移至陰涼處", "穿大衣", "喝熱咖啡"], correct: 1 },
+        { q: "哪種維生素跟眼睛健康最相關？", options: ["維生素A", "維生素B12", "維生素E", "維生素K"], correct: 0 },
+        { q: "如廁後哪項行為最重要？", options: ["洗手", "梳頭", "照鏡子", "唱歌"], correct: 0 },
+        { q: "均衡飲食中，哪類食物應吃最多？", options: ["油脂類", "全穀雜糧類", "糖果類", "炸雞類"], correct: 1 }
+    ];
+
+    let currentLevel = 0;
+    let score = 0;
+    let hp = 3;
+    let doorOpen = false;
+    let gameStarted = false;
+    let isWaiting = false; 
+    let animationId = null;
+    let platforms = [];
+    let coins = [];
+    let wrongAnswers = []; 
+
+    // 用於移動平台的變數
+    let bridgeDir = 1;
+
+    const player = {
+        x: 50, y: 50, vx: 0, vy: 0, size: 24,
+        onGround: false, speed: 3.5, jumpPower: -9.5, gravity: 0.4 
+    };
+
+    const keys = {};
+
+    function startGame() {
+        if (gameStarted) return;
+        document.getElementById('start-screen').style.display = 'none';
+        quizBank.sort(() => Math.random() - 0.5);
+        gameStarted = true;
+        initLevel();
+        if (animationId) cancelAnimationFrame(animationId);
+        gameLoop();
+    }
+
+    function generateMap() {
+        platforms = [
+            { x: 0, y: 130, w: 350, h: 15, isMovable: false },
+            { x: 120, y: 280, w: 450, h: 15, isMovable: currentLevel >= 10, minX: 50, maxX: 300 }, // 第10題後移動
+            { x: 0, y: 430, w: 800, h: 20, isMovable: false }
+        ];
+        
+        coins = []; 
+        const data = quizBank[currentLevel];
+        const possiblePositions = [
+            {pIdx: 1, xRange: [50, 150]}, // 相對於平台的偏移
+            {pIdx: 1, xRange: [250, 350]},
+            {pIdx: 2, xRange: [200, 350]},
+            {pIdx: 2, xRange: [400, 600]}
+        ].sort(() => Math.random() - 0.5);
+
+        data.options.forEach((opt, i) => {
+            const pos = possiblePositions[i];
+            const p = platforms[pos.pIdx];
+            // offsetX 是相對於平台左上角的距離
+            const offsetX = pos.xRange[0] + Math.random() * (pos.xRange[1] - pos.xRange[0]);
+            const cy = p.y - 45;
+            coins.push({ 
+                pIdx: pos.pIdx, 
+                offsetX: offsetX, 
+                x: p.x + offsetX, 
+                y: cy, 
+                text: opt, 
+                isCorrect: i === data.correct, 
+                collected: false 
+            });
+        });
+
+        player.x = 50; player.y = 50;
+        player.vx = 0; player.vy = 0;
+    }
+
+    function initLevel() {
+        doorOpen = false;
+        isWaiting = true; 
+        if (currentLevel > 0 && currentLevel % 5 === 0 && hp < 3) hp++;
+        generateMap();
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('q-level').innerText = `STEP ${currentLevel + 1} / 20`;
+        document.getElementById('q-text').innerText = quizBank[currentLevel].q;
+        document.getElementById('question-box').style.backgroundColor = "#333";
+        document.getElementById('status-hp').innerText = "HP: " + "❤️".repeat(hp);
+        document.getElementById('status-score').innerText = "SCORE: " + score;
+    }
+
+    function showReviewScreen(title) {
+        gameStarted = false;
+        document.getElementById('review-screen').style.display = 'flex';
+        document.getElementById('review-title').innerText = title;
+        document.getElementById('final-score').innerText = "最終得分: " + score;
+        
+        const listDiv = document.getElementById('review-list');
+        if (wrongAnswers.length === 0) {
+            listDiv.innerHTML = "<p>完美表現！你沒有答錯任何題目。</p>";
+        } else {
+            listDiv.innerHTML = wrongAnswers.map(item => `
+                <div class="review-item">
+                    <strong>問：${item.q}</strong><br>
+                    <span style="color: #2ecc71;">正確答案：${item.a}</span>
+                </div>
+            `).join('');
+        }
+    }
+
+    function loseHp() {
+        const currentQ = quizBank[currentLevel];
+        if (!wrongAnswers.find(item => item.q === currentQ.q)) {
+            wrongAnswers.push({
+                q: currentQ.q,
+                a: currentQ.options[currentQ.correct]
+            });
+        }
+        hp--;
+        if (hp <= 0) {
+            showReviewScreen("挑戰結束");
+        } else {
+            updateUI();
+            player.x = 50; player.y = 50;
+            player.vx = 0; player.vy = 0;
+            isWaiting = true; 
+        }
+    }
+
+    window.addEventListener('keydown', e => { 
+        if(gameStarted) {
+            if(isWaiting && e.code === 'Space') isWaiting = false;
+            keys[e.code] = true; 
+        }
+    });
+    window.addEventListener('keyup', e => { if(gameStarted) keys[e.code] = false; });
+
+    canvas.addEventListener('touchstart', (e) => {
+        if(gameStarted && isWaiting) { isWaiting = false; e.preventDefault(); }
+    });
+
+    const btnMap = { 'btn-left': 'ArrowLeft', 'btn-right': 'ArrowRight', 'btn-jump': 'ArrowUp' };
+    Object.keys(btnMap).forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('touchstart', (e) => { 
+            e.preventDefault(); 
+            if(gameStarted) { if(isWaiting) isWaiting = false; keys[btnMap[id]] = true; }
+        });
+        el.addEventListener('touchend', (e) => { e.preventDefault(); if(gameStarted) keys[btnMap[id]] = false; });
+    });
+
+    function update() {
+        if (!gameStarted || isWaiting) return; 
+
+        // 1. 移動平台與金幣更新
+        platforms.forEach(p => {
+            if (p.isMovable) {
+                let speed = 1.5;
+                p.x += bridgeDir * speed;
+                if (p.x > p.maxX || p.x < p.minX) bridgeDir *= -1;
+                
+                // 如果玩家站在移動平台上，跟著移動
+                if (player.onGround && player.y + player.size === p.y) {
+                    player.x += bridgeDir * speed;
+                }
+            }
+        });
+
+        // 更新金幣位置（隨平台移動）
+        coins.forEach(c => {
+            const p = platforms[c.pIdx];
+            c.x = p.x + c.offsetX;
+        });
+
+        // 2. 玩家控制與物理
+        if (keys['ArrowLeft']) player.vx = -player.speed;
+        else if (keys['ArrowRight']) player.vx = player.speed;
+        else player.vx *= 0.7;
+
+        if (keys['ArrowUp'] && player.onGround) {
+            player.vy = player.jumpPower;
+            player.onGround = false;
+        }
+
+        player.vy += player.gravity;
+        player.x += player.vx;
+        player.y += player.vy;
+        player.onGround = false;
+
+        // 3. 碰撞偵測
+        platforms.forEach(p => {
+            if (player.x + player.size > p.x && player.x < p.x + p.w &&
+                player.y + player.size > p.y && player.y + player.size < p.y + p.h + 10 && player.vy >= 0) {
+                player.y = p.y - player.size; player.vy = 0; player.onGround = true;
+            }
+            if (player.x + player.size > p.x && player.x < p.x + p.w &&
+                player.y < p.y + p.h && player.y > p.y && player.vy < 0) {
+                player.y = p.y + p.h; player.vy = 0;
+            }
+        });
+
+        coins.forEach(c => {
+            if (!c.collected) {
+                let range = 35;
+                if (Math.abs(player.x - c.x) < range && Math.abs(player.y - c.y) < range) {
+                    c.collected = true;
+                    if (c.isCorrect) {
+                        doorOpen = true; score += 100;
+                        document.getElementById('q-text').innerText = "正確！快去右下角開門！";
+                        document.getElementById('question-box').style.backgroundColor = "#2ecc71";
+                    } else { 
+                        score = Math.max(0, score - 20); loseHp(); 
+                    }
+                }
+            }
+        });
+
+        if (player.y > 520) loseHp();
+        if (player.x < 0) player.x = 0;
+        if (player.x > 800 - player.size) player.x = 800 - player.size;
+
+        if (doorOpen && player.x > 710 && player.y > 360) {
+            currentLevel++;
+            if (currentLevel < quizBank.length) initLevel();
+            else showReviewScreen("恭喜全關卡達成！");
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 繪製平台
+        platforms.forEach(p => {
+            ctx.fillStyle = p.isMovable ? "#e67e22" : "#444";
+            ctx.fillRect(p.x, p.y, p.w, p.h);
+        });
+        
+        // 繪製金幣
+        coins.forEach(c => {
+            if (!c.collected) {
+                ctx.fillStyle = "#f1c40f"; ctx.beginPath(); ctx.arc(c.x+15, c.y+15, 14, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = "#333"; ctx.font = "bold 15px Arial"; ctx.textAlign = "center";
+                ctx.fillText(c.text, c.x + 15, c.y - 12);
+            }
+        });
+
+        // 繪製門
+        if (doorOpen) {
+            ctx.fillStyle = (Date.now() % 600 > 300) ? "#2ecc71" : "#27ae60";
+            ctx.fillRect(720, 370, 50, 60);
+        } else {
+            ctx.fillStyle = "#ddd"; ctx.fillRect(720, 370, 50, 60);
+        }
+
+        // 繪製玩家
+        ctx.fillStyle = "#4ea5ff";
+        ctx.fillRect(player.x, player.y, player.size, player.size);
+
+        // 等待遮罩
+        if (isWaiting) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 32px '微軟正黑體'";
+            ctx.textAlign = "center";
+            ctx.fillText(currentLevel >= 10 ? "⚠️ 注意：橋樑開始移動！" : "READY?", canvas.width / 2, canvas.height / 2 - 20);
+            ctx.font = "20px '微軟正黑體'";
+            ctx.fillText("按下 [ 空白鍵 ] 開始挑戰", canvas.width / 2, canvas.height / 2 + 30);
+        }
+    }
+
+    function gameLoop() {
+        if (!gameStarted) return;
+        update();
+        draw();
+        animationId = requestAnimationFrame(gameLoop);
+    }
+</script>
+</body>
+</html>
